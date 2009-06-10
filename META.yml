@@ -1,0 +1,32 @@
+---
+abstract: 'model interface which had more data sources unified, a.k.a data/object mapper'
+author:
+  - 'Kazuhiro Osawa <yappo <at> shibuya <döt> pl>'
+build_requires:
+  IO::Socket::INET: 0
+  Path::Class: 0
+  Test::Class: 0
+  Test::Exception: 0
+  Test::More: 0
+  URI: 0
+distribution_type: module
+generated_by: 'Module::Install version 0.790'
+license: perl
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
+name: Data-Model
+no_index:
+  directory:
+    - inc
+    - t
+requires:
+  Carp: 0
+  Class::Trigger: 0
+  DBD::SQLite: 0
+  DBI: 0
+  Params::Validate: 0
+  Storable: 0
+resources:
+  license: http://dev.perl.org/licenses/
+version: 0.00001
