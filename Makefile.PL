@@ -4,6 +4,7 @@ all_from 'lib/Data/Model.pm';
 
 requires 'Carp';
 requires 'Class::Trigger';
+requires 'Encode';
 requires 'Params::Validate';
 requires 'Storable';
 requires 'DBI';
@@ -22,4 +23,5 @@ test_requires 'IO::Socket::INET';
 
 use_test_base;
 auto_include;
+auto_set_repository;
 WriteAll;
