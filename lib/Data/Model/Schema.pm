@@ -18,10 +18,16 @@ sub import {
     $SUGAR_MAP->{$caller} = $args{sugar} || 'default';
     $COLUMN_SUGAR->{$SUGAR_MAP->{$caller}} ||= +{};
 
-    no strict 'refs';
-    for my $name (qw/ base_driver driver install_model schema column columns key index unique schema_options column_sugar
-        utf8_column utf8_columns alias_column add_method /) {
-        *{"$caller\::$name"} = \&$name;
+    if ($caller eq 'Data::Model::Schema::Properties') {
+        $args{skip_import}++;
+    }
+
+    unless ($args{skip_import}) {
+        no strict 'refs';
+        for my $name (qw/ base_driver driver install_model schema column columns key index unique schema_options column_sugar
+                          utf8_column utf8_columns alias_column add_method /) {
+            *{"$caller\::$name"} = \&$name;
+        }
     }
 
     my $__properties = +{
@@ -31,6 +37,8 @@ sub import {
             class => $caller,
         },
     };
+
+    no strict 'refs';
     no warnings 'redefine';
     *{"$caller\::__properties"} = sub { $__properties };
 }
