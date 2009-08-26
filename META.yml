@@ -3,14 +3,17 @@ abstract: 'model interface which had more data sources unified, a.k.a data/objec
 author:
   - 'Kazuhiro Osawa <yappo <at> shibuya <döt> pl>'
 build_requires:
+  ExtUtils::MakeMaker: 6.42
   IO::Socket::INET: 0
   Path::Class: 0
   Test::Class: 0
   Test::Exception: 0
   Test::More: 0
   URI: 0
+configure_requires:
+  ExtUtils::MakeMaker: 6.42
 distribution_type: module
-generated_by: 'Module::Install version 0.790'
+generated_by: 'Module::Install version 0.910'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -20,6 +23,7 @@ no_index:
   directory:
     - inc
     - t
+    - xt
 requires:
   Carp: 0
   Class::Trigger: 0
@@ -31,4 +35,4 @@ requires:
 resources:
   license: http://dev.perl.org/licenses/
   repository: git://github.com/yappo/p5-Data-Model.git
-version: 0.00003
+version: 0.00004

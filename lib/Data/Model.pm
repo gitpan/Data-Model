@@ -2,7 +2,7 @@ package Data::Model;
 
 use strict;
 use warnings;
-our $VERSION = '0.00003';
+our $VERSION = '0.00004';
 
 use Carp ();
 $Carp::Internal{(__PACKAGE__)}++;
@@ -292,7 +292,10 @@ sub get {
     return if @_ && !@{ $query }; # undef key
     local $schema->{schema_obj} = $self;
     my($iterator, $iterator_options) = $schema->{driver}->get( $schema, @{ $query } );
-    return unless $iterator;
+    unless ($iterator) {
+        return if wantarray;
+        return Data::Model::Iterator::Empty->new;
+    }
 
     if (wantarray) {
         my @objs = ();
@@ -653,6 +656,14 @@ see L<Data::Model::Schema>.
   while (my $row = $iterator->next) {
       print $row->name;
   }
+  # or
+  while (my $row = <$iterator>) {
+      print $row->name;
+  }
+  # or
+  while (<$iterator>) {
+      print $_->name;
+  }
 
 =head2 set($target => $key, => \%values [, \%options ])
 
@@ -720,6 +731,11 @@ see L<Data::Model::Driver::Queue::Q4M>.
 on memory storage.
 
 see L<Data::Model::Driver::Memory>.
+
+=head1 SEE ALSO
+
+L<Data::Model::Row>,
+L<Data::Model::Iterator>
 
 =head1 ACKNOWLEDGEMENTS
 

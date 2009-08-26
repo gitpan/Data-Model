@@ -34,13 +34,24 @@ sub init {
     };
 }
 
+my %reuse_handles;
 sub init_db {
-    my($self, $name) = @_;
+    my($self, $name, %args) = @_;
     my $dbi_config = $self->dbi_config($name);
-    my $dbh = DBI->connect(
-        $dbi_config->{dsn}, $dbi_config->{username}, $dbi_config->{password},
-        { RaiseError => 1, PrintError => 0, AutoCommit => 1, %{ $dbi_config->{connect_options} || {} } },
-    ) or Carp::croak("Connection error: " . $DBI::errstr);
+    my $dsn = $dbi_config->{dsn};
+    my $dbh;
+    if ($self->{reuse_dbh}) {
+        $dbh = $reuse_handles{$dsn};
+    }
+    unless ($dbh && ($args{no_ping} || $dbh->ping)) {
+        $dbh = DBI->connect(
+            $dsn, $dbi_config->{username}, $dbi_config->{password},
+            { RaiseError => 1, PrintError => 0, AutoCommit => 1, %{ $dbi_config->{connect_options} || {} } },
+        ) or Carp::croak("Connection error: " . $DBI::errstr);
+        if ($self->{reuse_dbh}) {
+            $reuse_handles{$dsn} = $dbh;
+        }
+    }
     $self->{__dbh_init_by_driver} = 1;
     $dbh;
 }
@@ -48,19 +59,22 @@ sub init_db {
 sub _get_dbh {
     my $self = shift;
     my $name = shift || 'rw';
+    my %args = @_; # this option is experimental
     my $dbi_config = $self->dbi_config($name);
-    $dbi_config->{dbh} = undef if $dbi_config->{dbh} and !$dbi_config->{dbh}->ping;
-    unless ($dbi_config->{dbh}) {
+    unless ($args{no_ping}) {
+        $dbi_config->{dbh} = undef if $dbi_config->{dbh} and !$dbi_config->{dbh}->ping;
+    }
+    unless ($dbi_config->{dbh} || $args{cannot_reconnect}) {
         if (my $getter = $self->{get_dbh}) {
             $dbi_config->{dbh} = $getter->();
         } else {
-            $dbi_config->{dbh} = $self->init_db($name) or Carp::croak $self->last_error;
+            $dbi_config->{dbh} = $self->init_db($name, %args) or Carp::croak $self->last_error;
         }
     }
     $dbi_config->{dbh};
 }
 
-sub rw_handle { $_[0]->_get_dbh('rw') };
+sub rw_handle { shift->_get_dbh('rw', @_) };
 sub r_handle  { shift->rw_handle(@_) }
 
 sub last_error {}
@@ -234,6 +248,54 @@ sub replace {
     }
 }
 
+sub _on_duplicate_key_update {
+    my($self, $schema, $columns, $args, $sql, $column_list) = @_;
+    my $table = $schema->model;
+
+    # check unique keys
+    my $keys   = $schema->key;
+    my $unique = $schema->unique;
+    my $key_columns = [];
+    if (scalar(@{ $keys }) >= 1) {
+        if (scalar(keys %{ $unique }) >= 1) {
+            Carp::croak "on_duplicate_key_update support: $table has multi unique key";
+        }
+        # OK
+        $key_columns = $keys;
+    } elsif (scalar(keys %{ $unique }) > 1) {
+        Carp::croak "on_duplicate_key_update support: $table has multi unique key";
+    } elsif (scalar(keys %{ $unique }) == 1) {
+        # OK
+        while (my($k, $v) = each %{ $unique }) {
+            $key_columns = $v;
+        }
+    } else {
+        Carp::croak "on_duplicate_key_update support: $table not has key or unique index";
+    }
+
+    # check key num
+    my $has_keys = 1;
+    for my $k (@{ $key_columns }) {
+        $has_keys = 0 unless defined $columns->{$k};
+    }
+    Carp::croak "on_duplicate_key_update support: $table is insufficient keys" unless $has_keys;
+
+    # append sql
+    my @set;
+    for my $column (keys %{ $args }) {
+        my $val = $args->{$column};
+        if (ref($val) eq 'SCALAR') {
+            push @set, "$column = " . ${ $val };
+        } elsif (!ref($val)) {
+            push @set, "$column = ?";
+            push @{ $column_list }, [ $column => $val ];
+        } else {
+            Carp::confess 'No references other than a SCALAR reference can use a update column';
+        }
+    }
+    ${ $sql } .= ' ON DUPLICATE KEY UPDATE ' . join(', ', @set) . "\n";
+}
+
 sub _insert_or_replace {
     my($self, $is_replace, $schema, $key, $columns, %args) = @_;
     my $select_or_replace = $is_replace ? 'REPLACE' : 'INSERT';
@@ -246,6 +308,11 @@ sub _insert_or_replace {
     my $sql = "$select_or_replace INTO $table\n";
     $sql .= '(' . join(', ', @{ $cols }) . ')' . "\n" .
             'VALUES (' . join(', ', ('?') x @{ $cols }) . ')' . "\n";
+
+    # ON DUPLICATE KEY UPDATE support for MySQL
+    if ($args{on_duplicate_key_update} && $self->dbd->has_support('on_duplicate_key_update')) {
+        $self->_on_duplicate_key_update($schema, $columns, $args{on_duplicate_key_update}, \$sql, \@column_list);
+    }
 
     my $sth;
     eval {
@@ -410,7 +477,7 @@ sub _stack_trace {
     $sql =~ s/\n/\n          /gm;
     Carp::croak sprintf <<"TRACE", $reason, $sql, Data::Dumper::Dumper($binds);
     **** { Data::Model::Driver::DBI 's Exception ****
-Reasone : %s
+Reason : %s
 SQL     : %s
     **** BINDS DUMP ****
 %s
@@ -476,6 +543,10 @@ Data::Model::Driver::DBI - storage driver for DBI
       username        => 'user',
       password        => 'password',
       connect_options => $dbi_connect_options,
+      reuse_dbh       => 1, # sharing dbh (experimental option)
+                            # When you use by MySQL, please set up
+                            # connect_options => { mysql_auto_reconnect => 1 },
+                            # simultaneously. but mysql_auto_reconnect is very unsettled.
   );
   
   base_driver $driver;
