@@ -29,15 +29,11 @@ sub lookup {
     my $cache_key = $self->cache_key($schema, $key);
     my $ret = $self->{memcached}->get( $cache_key );
     return unless $ret;
-    if ($self->{serializer}) {
-        $ret = $self->{serializer}->deserialize($self, $ret);
-    }
-    if (my $map = $schema->options->{column_name_rename}) {
-        $ret = $self->column_name_rename($map, $ret, 1);
-    }
-    if ($self->{strip_keys}) {
-        $ret = $self->revert_keyvalue($schema, $key, $ret);
-    }
+    $ret = $self->{serializer}->deserialize($self, $ret) if $self->{serializer};
+    my $map = $schema->options->{column_name_rename};
+    $ret = $self->column_name_rename($map, $ret, 1)      if $map;
+    $ret = $self->revert_undefvalue($schema, $ret)       if $self->{ignore_undef_value};
+    $ret = $self->revert_keyvalue($schema, $key, $ret)   if $self->{strip_keys};
     return $ret;
 }
 
@@ -50,15 +46,11 @@ sub lookup_multi {
 
     my %resultlist;
     while (my($id, $data) = each %{ $ret }) {
-        if ($self->{serializer}) {
-            $data = $self->{serializer}->deserialize($self, $data);
-        }
-        if (my $map = $schema->options->{column_name_rename}) {
-            $data = $self->column_name_rename($map, $data, 1);
-        }
-        if ($self->{strip_keys}) {
-            $data = $self->revert_keyvalue($schema, $keys_map->{$id}, $data);
-        }
+        $data = $self->{serializer}->deserialize($self, $data)           if $self->{serializer};
+        my $map = $schema->options->{column_name_rename};
+        $data = $self->column_name_rename($map, $data, 1)                if $map;
+        $data = $self->revert_undefvalue($schema, $data)                 if $self->{ignore_undef_value};
+        $data = $self->revert_keyvalue($schema, $keys_map->{$id}, $data) if $self->{strip_keys};
         my $key = $schema->get_key_array_by_hash($data);
         $resultlist{join "\0", @{ $key }} = +{ %{ $data } };
     }
@@ -71,15 +63,11 @@ sub get {
     my $cache_key = $self->cache_key($schema, $key);
     my $ret = $self->{memcached}->get( $cache_key );
     return unless $ret;
-    if ($self->{serializer}) {
-        $ret = $self->{serializer}->deserialize($self, $ret);
-    }
-    if (my $map = $schema->options->{column_name_rename}) {
-        $ret = $self->column_name_rename($map, $ret, 1);
-    }
-    if ($self->{strip_keys}) {
-        $ret = $self->revert_keyvalue($schema, $key, $ret);
-    }
+    $ret = $self->{serializer}->deserialize($self, $ret) if $self->{serializer};
+    my $map = $schema->options->{column_name_rename};
+    $ret = $self->column_name_rename($map, $ret, 1)      if $map;
+    $ret = $self->revert_undefvalue($schema, $ret)       if $self->{ignore_undef_value};
+    $ret = $self->revert_keyvalue($schema, $key, $ret)   if $self->{strip_keys};
     return $self->_generate_result_iterator([ $ret ]), +{};
 }
 
@@ -88,16 +76,14 @@ sub set {
 
     my $cache_key = $self->cache_key($schema, $key);
     my $data = $columns;
-    if ($self->{strip_keys}) {
-        $data = $self->strip_keyvalue($schema, $key, $data);
-    }
-    if (my $map = $schema->options->{column_name_rename}) {
-        $data = $self->column_name_rename($map, $data);
-    }
-    if ($self->{serializer}) {
-        $data = $self->{serializer}->serialize($self, $data);
-    }
-    my $ret = $self->{always_overwrite} ? $self->{memcached}->set( $cache_key, $data ) :  $self->{memcached}->add( $cache_key, $data );
+    $data = $self->strip_keyvalue($schema, $key, $data)  if $self->{strip_keys};
+    $data = $self->strip_undefvalue($schema, $data)      if $self->{ignore_undef_value};
+    my $map = $schema->options->{column_name_rename};
+    $data = $self->column_name_rename($map, $data)       if $map;
+    $data = $self->{serializer}->serialize($self, $data) if $self->{serializer};
+    my $ret = $self->{always_overwrite} ?
+        $self->{memcached}->set( $cache_key, $data ) :
+            $self->{memcached}->add( $cache_key, $data );
     return unless $ret;
 
     $columns;
@@ -108,15 +94,11 @@ sub replace {
 
     my $cache_key = $self->cache_key($schema, $key);
     my $data = $columns;
-    if ($self->{strip_keys}) {
-        $data = $self->strip_keyvalue($schema, $key, $data);
-    }
-    if (my $map = $schema->options->{column_name_rename}) {
-        $data = $self->column_name_rename($map, $data);
-    }
-    if ($self->{serializer}) {
-        $data = $self->{serializer}->serialize($self, $data);
-    }
+    $data = $self->strip_keyvalue($schema, $key, $data)  if $self->{strip_keys};
+    $data = $self->strip_undefvalue($schema, $data)      if $self->{ignore_undef_value};
+    my $map = $schema->options->{column_name_rename};
+    $data = $self->column_name_rename($map, $data)       if $map;
+    $data = $self->{serializer}->serialize($self, $data) if $self->{serializer};
     my $ret = $self->{memcached}->set( $cache_key, $data );
     return unless $ret;
 
@@ -134,15 +116,11 @@ sub update {
     }
 
     my $data = $columns;
-    if ($self->{strip_keys}) {
-        $data = $self->strip_keyvalue($schema, $key, $data);
-    }
-    if (my $map = $schema->options->{column_name_rename}) {
-        $data = $self->column_name_rename($map, $data);
-    }
-    if ($self->{serializer}) {
-        $data = $self->{serializer}->serialize($self, $data);
-    }
+    $data = $self->strip_keyvalue($schema, $key, $data)  if $self->{strip_keys};
+    $data = $self->strip_undefvalue($schema, $data)      if $self->{ignore_undef_value};
+    my $map = $schema->options->{column_name_rename};
+    $data = $self->column_name_rename($map, $data)       if $map;
+    $data = $self->{serializer}->serialize($self, $data) if $self->{serializer};
     my $ret = $self->{memcached}->set( $new_cache_key, $data );
     return unless $ret;
 
@@ -174,6 +152,24 @@ sub revert_keyvalue {
     my $data = { %{ $columns } };
     for my $key (@{ $schema->key }) {
         $data->{$key} = $keys->[$i++].''; # copy
+    }
+    $data;
+}
+
+sub strip_undefvalue {
+    my($self, $schema, $columns) = @_;
+    my $data = { %{ $columns } };
+    for my $key (@{ $schema->columns }) {
+        delete $data->{$key} unless exists $data->{$key} && defined $data->{$key};
+    }
+    $data;
+}
+
+sub revert_undefvalue {
+    my($self, $schema, $columns) = @_;
+    my $data = { %{ $columns } };
+    for my $key (@{ $schema->columns }) {
+        $data->{$key} = undef unless exists $data->{$key} && defined $data->{$key};
     }
     $data;
 }
@@ -487,6 +483,17 @@ strip tables key data, Because key data stored in a memcached key part.
   my $driver = Data::Model::Driver::Memcached->new(
       memcached  => Cache::Memcached::Fast->new({ servers => [ { address => "localhost:11211" }, ], }),
       strip_keys => 1,
+  );
+
+=head2 ignore_undef_value
+
+When B<value> is B<undef>, a value is not put into storage.
+
+It becomes size saving at the time of obvious empty data.
+
+  my $driver = Data::Model::Driver::Memcached->new(
+      memcached          => Cache::Memcached::Fast->new({ servers => [ { address => "localhost:11211" }, ], }),
+      ignore_undef_value => 1,
   );
 
 =head2 model_name_realname column_name_rename
