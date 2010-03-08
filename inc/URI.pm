@@ -3,7 +3,7 @@ package URI;
 
 use strict;
 use vars qw($VERSION);
-$VERSION = "1.37";
+$VERSION = "1.52";
 
 use vars qw($ABS_REMOTE_LEADING_DOTS $ABS_ALLOW_RELATIVE_SCHEME $DEFAULT_QUERY_FORM_DELIMITER);
 
@@ -23,11 +23,15 @@ use Carp ();
 use URI::Escape ();
 
 use overload ('""'     => sub { ${$_[0]} },
-	      '=='     => sub { overload::StrVal($_[0]) eq
-                                overload::StrVal($_[1])
-                              },
+              '=='     => sub { _obj_eq(@_) },
+              '!='     => sub { !_obj_eq(@_) },
               fallback => 1,
              );
+
+# Check if two objects are the same object
+sub _obj_eq {
+    return overload::StrVal($_[0]) eq overload::StrVal($_[1]);
+}
 
 sub new
 {
@@ -75,11 +79,19 @@ sub _init
     my $class = shift;
     my($str, $scheme) = @_;
     # find all funny characters and encode the bytes.
-    $str =~ s*([^$uric\#])* URI::Escape::escape_char($1) *ego;
+    $str = $class->_uric_escape($str);
     $str = "$scheme:$str" unless $str =~ /^$scheme_re:/o ||
                                  $class->_no_scheme_ok;
     my $self = bless \$str, $class;
     $self;
+}
+
+
+sub _uric_escape
+{
+    my($class, $str) = @_;
+    $str =~ s*([^$uric\#])* URI::Escape::escape_char($1) *ego;
+    return $str;
 }
 
 
@@ -108,7 +120,7 @@ sub implementor
     # preloaded (with 'use') implementation
     $ic = "URI::$scheme";  # default location
 
-    # turn scheme into a valid perl identifier by a simple tranformation...
+    # turn scheme into a valid perl identifier by a simple transformation...
     $ic =~ s/\+/_P/g;
     $ic =~ s/\./_O/g;
     $ic =~ s/\-/_/g;
@@ -245,6 +257,34 @@ sub as_string
 }
 
 
+sub as_iri
+{
+    my $self = shift;
+    my $str = $$self;
+    if ($str =~ s/%([89a-fA-F][0-9a-fA-F])/chr(hex($1))/eg) {
+	# All this crap because the more obvious:
+	#
+	#   Encode::decode("UTF-8", $str, sub { sprintf "%%%02X", shift })
+	#
+	# doesn't work before Encode 2.39.  Wait for a standard release
+	# to bundle that version.
+
+	require Encode;
+	my $enc = Encode::find_encoding("UTF-8");
+	my $u = "";
+	while (length $str) {
+	    $u .= $enc->decode($str, Encode::FB_QUIET());
+	    if (length $str) {
+		# escape next char
+		$u .= URI::Escape::escape_char(substr($str, 0, 1, ""));
+	    }
+	}
+	$str = $u;
+    }
+    return $str;
+}
+
+
 sub canonical
 {
     # Make sure scheme is lowercased, that we don't escape unreserved chars,
@@ -297,4 +337,4 @@ sub STORABLE_thaw {
 
 __END__
 
-#line 1039
+#line 1102
