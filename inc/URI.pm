@@ -3,7 +3,7 @@ package URI;
 
 use strict;
 use vars qw($VERSION);
-$VERSION = "1.52";
+$VERSION = "1.54";
 
 use vars qw($ABS_REMOTE_LEADING_DOTS $ABS_ALLOW_RELATIVE_SCHEME $DEFAULT_QUERY_FORM_DELIMITER);
 
@@ -322,6 +322,8 @@ sub eq {
 sub abs { $_[0]; }
 sub rel { $_[0]; }
 
+sub secure { 0 }
+
 # help out Storable
 sub STORABLE_freeze {
        my($self, $cloning) = @_;
@@ -337,4 +339,4 @@ sub STORABLE_thaw {
 
 __END__
 
-#line 1102
+#line 1109
