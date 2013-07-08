@@ -2,7 +2,7 @@ package Data::Model;
 
 use strict;
 use warnings;
-our $VERSION = '0.00007';
+our $VERSION = '0.00008';
 
 use Carp ();
 $Carp::Internal{(__PACKAGE__)}++;
@@ -671,6 +671,14 @@ see L<Data::Model::Schema>.
     id   => 3,
     name => 'insert record',
   });
+
+
+if insert to table has auto increment then return $row object with fill in key column by last_insert_id.
+
+  my $row = $model->set( user => {
+    name => 'insert record',
+  });
+  say $row->id; # show last_insert_id()
 
 =head2 delete($target => $key [, \%options ])
 
